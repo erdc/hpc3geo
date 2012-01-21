@@ -11,7 +11,9 @@ Repository contents
 - multiphase_notes_cek: various notes and reports on multiphase flow
   in porous mdia
 
-- multiphase_notes_cek/rn-mp.pdf: 
+- multiphase_notes_cek/rn-mp.pdf: a pdf of the notes
+
+- morphology: some papers on St. Venant-Exner systems (shallow water with an eroding bed)
 
 To add files
 -------------
