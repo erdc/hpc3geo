@@ -1,0 +1,914 @@
+\documentclass[10pt,dvips,twoside,reqno]{amsart} 
+\usepackage{epsfig}
+\usepackage[authoryear]{natbib} \setlength{\oddsidemargin}{0in}
+\setlength{\evensidemargin}{0in} \setlength{\topmargin}{-0.25in}
+\setlength{\headheight}{0.1in} \setlength{\headsep}{0.15in}
+\setlength{\topskip}{0in} \setlength{\footskip}{0.15in}
+\setlength{\textwidth}{6.5in} \setlength{\textheight}{9in}
+
+\input{macros} 
+
+\begin{document}
+
+
+\begin{center}
+  {\bf NOTES ON AIR/WATER FLOW IN POROUS MEDIA} \\
+  Chris Kees\\
+  Coastal and Hydraulics Laboratory,
+  U.S. Army Engineer Research and Development Center,\\
+  Vicksburg, MS 39180, email: \texttt{christopher.e.kees@erdc.usace.army.mil} \\
+  October 26, 2005
+\end{center}
+\markboth{NOTES ON AIR/WATER FLOW IN POROUS MEDIA/KEES}{NOTES ON AIR/WATER FLOW IN POROUS MEDIA/KEES}
+
+\begin{center} TODO \end{center}
+\begin{enumerate}
+\item CMWR Abstract: Richards' equation and the two-phase flow
+  equations are well-known degenerate parabolic models of air/water
+  flow in porous media. Poor iterative solver performance and small
+  time steps during transient simulations are often reported in
+  field-scale simulations. In this work we study Newton-multigrid and
+  nonlinear multigrid methods applied to discrete air/water flow
+  models. The models are discretized using standard continuous finite
+  element spaces. Due to strong nonlinearity and potential degeneracy
+  in the coefficients, we stabilize the models using a multiscale
+  approach. We present computational results comparing iterative
+  solver perfomance and solution accuracy, focusing particularly on
+  the effects of degenerate coefficients in wetting and drying
+  problems.
+\item Matthew's and Lea's abstract
+\item Multiscale/shock capturing FEM (done, need to write up).
+\begin{enumerate}
+\item multiscale stabilization
+\item shock capturing numerical diffusion
+\item BDF1 or BDF-k 
+\item mass conservation flux calculation
+\end{enumerate}
+\item DG/MHFEM
+\item Show eigenvalues versus $h$ (done in 1D for simple test problems).
+\item Write up multigrid algorithms.
+\begin{enumerate}
+\item MGM
+\item NI(MGM)=FMG
+\item Newton-NI(MGM), NI-Newton-NI(MGM)
+\item Add GMRES layer or just terminate on residuals? How to choose residual tolerance(fraction of nonlinear tolerance, which should be h-dependent, I think)?
+\end{enumerate}
+\item Figure out how to present multigrid results, also time-dependent case.
+\item Maybe go back and put in erfc solutions and Laplace transform/semigroup approach to look at eigenvalues.
+\item See if Barenblatt solution can be fixed for nonlinear advection as well.
+\item Think about whether finite time to equilibrium is really the right in fast diffusion case.
+\item Fix EVec and Mesh implementation problems w.r.t. memory and speed.
+\item Peel off GraphTools for view/write
+\end{enumerate}
+
+
+\tableofcontents 
+
+\section{Model Formulations}
+
+\subsection{Primitive Continuuum Model Equations}
+
+For a mixture of two mobile, immiscible fluid phases (labeled wetting,
+$w$, and a non-wetting, $n$) the standard model is
+\begin{eqnarray}
+\pd{(\omega s_w \rho_w)}{t} + \deld (\rho_w \vec v_w) +c_w&=& d_w \label{eq:satW} \\
+\pd{(\omega s_n \rho_n)}{t} + \deld (\rho_n \vec v_n) +c_n&=& d_n \label{eq:satN}\\
+\vec v_w &=& - \frac{\ten{k}_i \ten{k}_{rw}}{\mu_w}(\grad p_w - \rho_w \vec g)  \label{eq:waterFlux} \\
+\vec v_n &=& - \frac{\ten{k}_i \ten{k}_{rn}}{\mu_n}(\grad p_n - \rho_n \vec g)  \label{eq:nwFlux}\\
+s_n &=& 1 - s_w \label{eq:sat_const} \\
+p_n - p_w &=& p_c(\vec x,s_w) \label{eq:pc_S} \\
+\ten k_{r \alpha} &=& \ten k_{r \alpha}(\vec x,s_w) \label{eq:kr_S} \\
+\ten k_{i} &=& \ten k_{i}(\vec x) \\
+\rho_{\alpha} &=& \rho_{\alpha}(p_{\alpha}) \\
+\omega &=& \omega(\vec x,p_n,p_w) \\
+\mu_{\alpha} &=& \mu_{\alpha}(p_{\alpha})
+\label{eq:viscosity} 
+\end{eqnarray}
+
+\subsection{Working Formulations}
+
+I'll adopt the following dimensionless variables.
+\bneqnarray{Dimensionless Variables}{
+  \tilde{t} &=& t \sqrt{\frac{g}{l}} \\
+  \tilde{\vec x} &=& \vec x \frac{1}{l} \\
+  \tilde{\psi}_{\alpha} &=& \frac{p_{\alpha} - p_{w,0}}{\rho_{w,0} g l} \label{eq:head2p}\\
+  \tilde{\psi}_c &=& \tilde{\psi}_n - \tilde{\psi}_w \label{eq:capHead}\\
+  \tilde{\rho}_{\alpha} &=& \frac{\rho_{\alpha}}{\rho_{\alpha,0}} \\
+  \tilde{\ten K} &=& \frac{\rho_{w,0} g \ten k}{\mu_w \sqrt{gl}} \\
+  \tilde{\vec v}_{\alpha} &=& \vec v_{\alpha} \frac{1}{\sqrt{gl}} \\
+  \tilde{\vec g} &=& \frac{\vec g}{g} \label{eq:dg2p} \\
+  \tilde{z} &=& -\tilde{\vec g} \cdot (\tilde{\vec x} - \tilde{\vec x}_0) \\
+  \tilde{\mu_{\alpha}} &=& \frac{\mu_{\alpha}}{\mu_w}\\
+  \tilde{\lambda}_w &=& \frac{\tilde{\rho}_w k_{rw}}{\tilde{\mu}_w}\\
+  \tilde{\lambda}_n &=& \frac{\tilde{\rho}_n k_{rn}}{\tilde{\mu}_n}\\
+  \tilde{c}_{\alpha} &=& \frac{c_{\alpha}}{\rho_{\alpha,0}}\sqrt{\frac{l}{g}} \\
+  \tilde{d}_{\alpha} &=& \frac{d_{\alpha}}{\rho_{\alpha,0}}\sqrt{\frac{l}{g}} \\
+  b &=& \frac{\rho_{n,0}}{\rho_{w,0}}} 
+Henceforth we drop the tilde. Skipping a lot of details, we come
+to the following set of model formulations that are useful for
+analysis and computations. We write the general two-phase system as a
+general advection-diffusion-reaction system with unknowns $u_1,u_2$
+and nonlinear coefficients $m,f,a,\phi,r$
+\begin{eqnarray}
+m_{1,t} + \deld \pl \vec f_1 - \sum_{j=1}^2 \ten{a}_{1,j} \grad \phi_{1,j} \pr + r_1 = 0 \\
+m_{2,t} + \deld \pl \vec f_2 - \sum_{j=1}^2 \ten{a}_{2,j} \grad \phi_{2,j} \pr + r_2 = 0 
+\end{eqnarray}
+The terms $r_1$ and $r_2$ are problem dependent sources. We introduce the following auxiliary variables 
+\begin{eqnarray}
+\lambda_t &=&  \lambda_w + \lambda_n \\
+f_n &=& \frac{\lambda_n}{\lambda_t}\\
+f_w &=& \frac{\lambda_w}{\lambda_t}\\
+\rho_t &=& f_w\rho_w  + f_n b \rho_n = \rho_w + f_n (b \rho_n - \rho_w)\\
+\vec q_t &=& \rho_n \vec v_n + \rho_w \vec v_w
+\end{eqnarray}
+The first working formulation is the primitive form, which defines the coefficints of the system as
+\bneqnarray{2p-$s_w$-$\psi_w$}{
+m_{1} &=& \omega \rho_w s_w \\
+m_{2} &=& \omega \rho_n (1-s_w) \\
+f_1 &=& - \rho^{2}_{w} \ten{K} \lambda_w \grad z \\
+f_2 &=& - \rho^{2}_{n} \ten{K} \lambda_n b \grad z \\
+\ten{a}_{1,1} &=& \rho_w \ten{K} \lambda_w\\
+\ten{a}_{2,2} &=& \rho_n \ten{K} \lambda_n\\
+\phi_{1,1} &=& \psi_w \\
+\phi_{2,2} &=& \psi_c(s_w) + \psi_w\\
+u_1 &=& s_w \\
+u_2 &=& \psi_w }
+For the next two formulations I'll neglect compressibility and some
+forms of heterogeneity. If compressibility and heterogeneity are
+present some additional ``correction'' terms are required in the
+equations.  The second working form is the fractional flow with phase
+pressure
+\bneqnarray{2p-$s_w$-$\psi_w$-FF}{
+m_{1} &=& \omega \rho_w s_w\\
+m_{2} &=& \omega \sbl s_w (\rho_w - \rho_n) + \rho_n \sbr\\
+f_{1} &=& f_w q_t + \ten{K} \lambda_w f_n (b \rho_n - \rho_w) \grad z \\
+f_{2} &=& \ten{K} \lambda_t \rho_t \grad z\\
+a_{1,1} &=& \ten{K} \\
+a_{2,1} &=& \ten{K} \\
+a_{2,2} &=& \ten{K} \lambda_t \\
+\phi_{1,1} &=& \int^1_{s_w} \lambda_w f_n \od{p_c}{s_w} ds\\
+\phi_{2,1} &=& \int^1_{s_w} \lambda_n \od{p_c}{s_w} ds\\
+\phi_{2,2} &=& \psi_w \\ 
+u_1 &=& s_w \\
+u_2 &=& \psi_w}
+The third working form is the fractional flow with total (global)
+pressure \bneqnarray{2p-$s_w$-$\psi_t$-FF}{
+  m_{1} &=& \omega \rho_w s_w\\
+  m_{2} &=& \omega \sbl s_w (\rho_w - \rho_n) + \rho_n \sbr\\
+  f_{1} &=& f_w q_t + \ten{K} \lambda_w f_n (b \rho_n - \rho_w) \grad z \\
+  f_{2} &=& \ten{K} \lambda_t \rho_t \grad z\\
+  a_{1,1} &=&  \ten{K} \\
+  a_{2,2} &=&  \ten{K} \lambda_t \\
+  \phi_1 &=& \int^1_{s_w} \lambda_w f_n \od{p_c}{s_w} ds_w\\
+  \phi_2 &=& \psi_t = \psi_w + \int_{-\infty}^{\psi_c}  f_n(w) dw = \frac{\psi_w + \psi_n}{2} + \int^{1}_{s_e} \pl f_w - \frac{1}{2} \pr \od{\psi_c}{s_e} dw\\
+  u_1 &=& s_w \\
+  u_2 &=& \psi_t }
+I give two formulations of the scalar Richards' equation.
+First the pressure head equation in conservative form
+\bneqnarray{Richards-$\psi$}{
+  m_1 &=& \omega \rho_w s_w\\
+  f_1 &=& -\ten{K} \lambda_w \rho_w \grad z \\
+  a_1 &=& \ten{K} \lambda_w \\
+  \phi_1 &=& \psi_w \\
+  u_1 &=& \psi_w} Lastly, a transformed Richards' equation in conservative form that is an extension of the saturation-based Richards' equation.
+\bneqnarray{Richards-u}{
+  m_1 &=& \omega \rho_w s_w\\
+  f_1 &=& -\ten{K} \lambda_w \rho_w \grad z \\
+  a_1 &=& \ten{K} \lambda_w \\
+  \phi_1 &=& \cbl \begin{array}{lc} \int_0^{u_1} \lambda_w \od{p_c}{s_w} \od{s_w}{u_1}du_1 & u_1 < 0 \\
+u_1  &  u_1 \geq 0 \end{array} \right.\\
+s_w &=& 1-C \max(-u_1,0)^p \\
+\psi_w &=& \cbl \begin{array}{lc}  - \psi_c(s_w(u_1)) & u_1 < 0 \\
+u_1 & u_1 \geq 0  \end{array} \right. }
+The constants $C$ and $p$ are chosen (if possible) so that
+\begin{equation}
+\lim_{u_1 \rightarrow 0^{-}}  \lambda_w \od{p_c}{s_w} \od{s_w}{u_1} = 1 
+\end{equation}
+hence $\phi_1(u_1)$ is $C^1$, in particular, $\od{\phi_1}{u_1}(0) =
+1$. The transformation depends on the constitutive relations and it
+may be necessry to relax $C^1$ to Lipschitz
+continuous (see later section).
+
+The constitutive equations are summarized next
+\begin{center}
+\fbox{\begin{minipage}[b]{6.5in}
+\begin{align}
+  \intertext{p-s-k Closure Relations}
+  s_e &= \frac{s_w -  s_m(\vec x)}{s_M(\vec x) - s_m(\vec x)} && \mbox{(effective saturation)}\\
+  p_{ce} &= \frac{p_c}{p_{cM}(\vec x)} && \mbox{(effective capillary pressure)}\\
+  \intertext{\center Simple Model}
+  p_{ce} &= s_e \\
+  k_{rw} &= s_e^2  \\
+  k_{rn} &= \frac{1}{
+2}(1-s_e)^2
+  \intertext{\center Van Genuchten-Mualem}
+  p_{cM} &= \frac{1}{\alpha(\vec x)} && \alpha > 0\\
+  p_{ce} &= \pl s_e^{-1/m} - 1 \pr^{1-m} && 0 < m < 1\\
+  k_{rw} &= s_e^{1/2} \sbl 1-(1-s_e^{1/m})^m \sbr^2 \\
+  k_{rn} &= (1-s_e)^{1/2}(1-s_e^{1/m})^{2m} \\
+  \intertext{\center Brooks-Corey-Burdine}
+  p_{cM} &= p_d(\vec x) &&p_d > 0\\
+  p_{ce} &= \Big\{ \begin{array}{ll}
+    s_e^{-1/\lambda} & s_e < 1   \\
+    0 & s_e = 1 
+  \end{array} && \lambda > 0\\
+  k_{rw} &= s_e^{(2 + 3 \lambda)/\lambda} \\
+  k_{rn} &= (1-s_e)^2(1-s_e^{(2+\lambda)/\lambda}) 
+\intertext{Density Closure Relations (Dimensionless)}
+\rho &= 1 &&\mbox{(constant)}\\
+\rho &= e^{\beta_f \psi} &&\mbox{(exponential)}\\
+\rho &= 1 + \beta_f \psi &&\mbox{(linear)}\\
+\rho &= p/Z(p,T)RT &&\mbox{(real gas,Z=1 for ideal)}\\
+\rho &= (\psi/\psi_0)^m e^{\beta_f \psi} &&\mbox{(general)}\\
+\intertext{Porosity Closure Relations (Dimensionless)}
+\rho &= \omega_0 &&\mbox{(constant)}\\
+\rho &= 1 + \beta_m \psi &&\mbox{(linear)}
+\end{align}
+\end{minipage}}
+\end{center}
+
+\begin{center}
+\fbox{\begin{minipage}[b]{6.5in}
+\begin{align}
+\intertext{Dimesional Quanties (Examples--Source http://www.hbcpnetbase.com)}
+\rho_0 &= 997.0 && [kg/m^3] \mbox{ for water at $25^\circ$ C and 101325Pa}\\
+\rho_0 &= 1.205 && [kg/m^3] \mbox{ for air at $20^\circ$ C and 101325Pa}\\
+\beta_f &= \rho_0 g l \cdot 4.524\times10^{-10} &&[(kg \cdot m /s^2)^{-1} = Pa^{-1}]  \mbox{ for water at $25^\circ$ C}\\
+\beta_f &= \rho_0 g l \cdot9.87\times10^{-6} &&[(kg \cdot m /s^2)^{-1} = Pa^{-1}]  \mbox{ for air at $25^\circ$ C}\\
+\beta_m &= \rho_0 g l \cdot 10^{-6} \mbox{---} 10^{-11} &&[(kg \cdot m /s^2)^{-1} = Pa^{-1}]  \mbox{ for various media}\\
+\mu &= 8.9\times 10^{-4} && [kg / m \cdot s = Pa \cdot s] \mbox{ for water at $25^\circ$} \\
+\mu &= 7.1\times 10^{-6} && [kg / m \cdot s = Pa \cdot s] \mbox{ for air at $25^\circ$} \\
+g &= 9.8 && [m/s^2] \mbox{ for Mississippi} \\
+\ten{k}&= 10^{-7}\mbox{---}10^{-16} && [m^2] \mbox{ for various media}\\
+\omega&=0.01\mbox{---}0.9 && [-] \mbox{ for various media} \\ 
+R&=8.314 &&[kg \cdot m^2 / K mol s^2]
+\end{align}
+\end{minipage}}
+\end{center}
+
+\subsection{Asymptotic Behavior of Coefficients and Simplified Test Problem}
+
+In this section my objectives are to motivate a simple test problem
+and to derive the variable transformations that are required for some
+cases, in particular, the last form of Richards' equation that I
+presented above. Depending on the constitutive relations, we have
+saturation dependent coefficients that may have derivatives that blow
+at $s_e=1$. To look at the asymptotic behavior we change variables to
+$u=1-s_e$ (i.e., effective non-wetting phase saturation). We have as $u
+\rightarrow 0$ for the Van Genuchten-Mualem relations
+\begin{eqnarray}
+\od{p_c}{s} &=& \frac{m-1}{m}\frac{1}{m}^{-m} u^{-m} + o(u^{-m}) \label{eq:pcApp}\\
+k_{rw} &=& 1-2 \frac{1}{m}^m u^m + o(u^m) \label{eq:kwApp} \\
+k_{rn} &=& \frac{1}{m}^{2m} u^{\frac{1}{2}+2m} + o(u^{\frac{1}{2}+2m}) \label{eq:knApp}
+\end{eqnarray}
+Neglecting constants, we can approximate two-phase flow with the nonlinearities
+\begin{eqnarray}
+  \label{eq:twopSimpCoef}
+  \od{\phi_{1,1}}{s_w} &=& -\frac{k_i}{\omega \mu_w}\frac{m-1}{m}\frac{1}{m}^{m} u^{\frac{1}{2} + m}  + o(u^{\frac{1}{2} + m}) \approx   u^{\frac{1}{2}+m} \label{eq:blCoeffDapp}\\
+  f_1 &=& \frac{k_i}{\omega \mu_w} \frac{1}{m}^{2m} u^{\frac{1}{2}+2m} (1 - \frac{\rho_n}{\rho_w}) \rho_wg_x + o(u^{\frac{1}{2}+2m}) \nonumber \\
+&\approx&   u^{\frac{1}{2}+2m} \label{eq:blCoeffFapp}
+\end{eqnarray}
+and Richards' equation with
+\begin{eqnarray}
+  \od{\phi_1}{s_w} &=& \frac{k_i}{\omega \mu_w}\frac{m-1}{m}\frac{1}{m}^{-m} u^{-m}+ o(u^{-m}) \approx   u^{-m} \label{eq:reCoeffDapp}\\
+  f &=& -\frac{k_i}{\omega \mu_w} \pl 1-2 \frac{1}{m}^m u^m\pr \rho_w  g_x  + o(u^m) \nonumber \\
+&\approx&   1-u^m \label{eq:reCoeffFapp}
+\end{eqnarray}
+Making these approximations yields a simple model
+\begin{equation}
+  u_t + (b u^p - a u^q_x)_x = 0 \label{eq:simpMod}
+\end{equation}
+where $b =1$ for two-phase flow and $b=-1$ for Richards' equation.
+
+In terms of the parameter $m$, the approximate two-phase flow model
+has $q = 3/2 + m$ and $p=1/2+2m$ where the ranges of $p$ and $q$ are
+$1<q<5/2$ and $0<p<5/2$. Thus, $f$ has infinite slope at $s=1$ for
+$m<1/4$, which holds both for the simplified model and the original
+two-phase model. The approximate Richards' equation has $q=1-m$ and $p
+= m$ where the range of $p$ and $q$ is $0<p,q<1$. Thus $|\od{f}{u}|$
+blows up faster than $\od{\phi}{u}$ when $m < 1/2$.
+
+\begin{table}
+\caption{Summary of model parameters for $0<m<1$ \label{tab:pqrParms}}
+\begin{tabular}{lccc}
+&$q$ & $p$ & $b_0$ \\
+\hline
+Two-phase & 3/2 + m & 1/2 + 2m & -1 \\
+Richards & 1-m & m & 1 \\ 
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Variable Transformation}
+
+The asymptotic approximations above not only yield simplified model
+equations but also a change of variables for the original
+model equations that will yield $C^1$
+coefficients over the entire range of saturations $0\leq s_e \leq 1$. 
+
+For two-phase flow in the case $m<1/4$, we will make the substitution
+\begin{equation}
+  \label{eq:cov}
+  v = \frac{1}{m}^{2m} u^{\frac{1}{2}+2m}
+\end{equation}
+This transformation yields nonlinear coefficients $s$, $f$, and $\phi$
+that are differentiable in $v$.
+
+The variable transformations are slightly more complex for Richards'
+equation. For $m\geq1/2$, $\od{\phi}{u} \rightarrow \infty$ and $\od{\phi}{u}/|\od{f}{u}|
+\rightarrow \infty$ as $u \rightarrow 0$.  We design a change of
+variables $v(u)$ so that $(dp_c/ds)(d v/du)(0) = 1$. Such a $v(u)$
+will yield a diffusion coefficient that is bounded and continuous
+and, therefore, a potential $\phi$ that is differentiable and an
+advective flux that is zero at $u=0$.  This consideration leads to
+\begin{equation}
+  \label{eq:cofRE1}
+  v = -m^m u^{1-m}
+\end{equation}
+For $m<1/2$, $\od{\phi}{u}/|\od{f}{u}| \rightarrow 0$ as $u \rightarrow 0$. Thus,
+as we did in the two-phase case, we construct a change of variables so
+that the advective flux is differentiable:
+\begin{equation}
+  \label{eq:covRE2}
+  v = -2 \frac{1}{m}^m u^m
+\end{equation}
+
+For the simplified model equation we can use 
+\begin{equation}
+  \label{eq:pqr}
+  v = u^{\min(p,q)}
+\end{equation}
+
+If we don't use operator splitting for the pressure equation in
+two-phase flow we may have trouble with the $\lambda_t$ term in
+$a_{2,2}$, which is not differentiable with respect to $s_w$ for these
+closure relations. We'll either have to use operator splitting,
+neglect those terms in the Jacobian, or choose a variable
+transformation that ``kills off'' those terms too.
+
+\section{Analytical Solutions \label{analytical}}
+
+In the following sections we look at analytical solutions that may be
+useful in understanding the behavior of two-phase flow or our
+numerical methods. I'm mainly interested in solutions with simple
+algebraic representations.
+
+\subsection{Differential-Algebraic Equations}
+
+To test out time integration methods and get a feel for some of the
+dynamics we study the initial-value problem
+\begin{eqnarray}
+\od{u}{t} &=& - a \max(u,0)^p \\
+u(0) &=& 1
+\end{eqnarray}
+where $p > 0$. A solution can be obtained by seperation of variables
+\begin{equation}
+u(t) = \cbl \begin{array}{ll} \max(1 - (1-p) a t,0)^{\frac{1}{1-p}} & p \neq 1 = f(u) \\
+e^{-a t} & p = 1 \end{array} \right.
+\end{equation}
+The equilibrium value of $u$ is zero. If $p<1$, the solution reaches
+equilibrium in ``finite'' time. We will see similar behavior in the
+``fast diffusion'' case of the the PDE models, which are characterized
+by certain portions of the domain reaching equilibrium in finite time.
+If $p > 1$ the solution tends to equilibrium slower than the standar
+linear model $p=1$.  For all cases the soluions are $C^1$; however,
+for $p<1$ the right hand side, $f(u)$ is not Lipschitz continous and
+thus the standard proof for uniqueness of solutions to initial value
+problems does not hold. Furthermore if we look at a perturbation $u +
+\delta$ and linearize the right hand side about $u$ we have the linear
+equation for the perturbation
+\begin{equation}
+\od{\delta}{t} = - a p \max(u,0)^{p-1} \delta = - \lambda \delta
+\end{equation}
+Thus we suspect that for $p<1$ only methods that are linearly stable
+in the case $\lambda \rightarrow \infty$ would be stable for this
+equation. On the other hand for $p > 1$, conditionally stable methods
+might be sufficient.
+
+For $p<1$, we think of the problem as a semi-explicit DAE
+\begin{eqnarray}
+\od{u}{t}&=& -\lambda v = f(v)\\
+0 &=& u - \max(v,0)^{\frac{1}{p}} = g(u,v)
+\end{eqnarray}
+One differentian of the constraint with respect to time yields
+\begin{eqnarray}
+0 &=& \od{u}{t} - \frac{1}{p} \max(v,0)^{\frac{1-p}{p}} \od{v}{t} \\
+&=& -\lambda v - \frac{1}{p} \max(v,0)^{\frac{1-p}{p}} \od{v}{t} \\
+\end{eqnarray}
+which yields, for $u \neq 0$, and after substituting $-\lambda v =
+\od{u}{t}$ and $u = \max(v,0)^{\frac{1}{p}}$
+\begin{equation}
+\od{v}{t} = - p \lambda \frac{v^2}{u} 
+\end{equation}
+Hence, away from $u = 0$ the equation is uniformly index 1. At $u=0$
+we have the ``hidden'' constraint
+\begin{equation}
+0 = -\lambda v = g_u(u,0) f(v) 
+\end{equation}
+Differentiating again yields
+\begin{equation}
+0= -\lambda v_t 
+\end{equation}
+\subsection{Linear Time-Dependent Advection-Diffusion-Reaction Equation}
+
+We consider the Cauchy problem for the linear model problem
+\begin{eqnarray}
+\pd{u}{t} +(b u_x - a u_x)_x + c u &=& 0 \\
+u(x,0) &=& g(x)
+\end{eqnarray}
+Where $g$ has compact support. Changing coordinates to $\xi = x - bt$
+and employing seperation of variables yields a family of solutions
+$u_n = v_n(t) w_n(\xi)$ where
+\begin{eqnarray}
+v_n(t) &=& C_n e^{-\sbl a\pl n \pi \pr^2 + c \sbr t} \\
+w_n(\xi) &=& \sin(n \pi \xi)
+\end{eqnarray}
+The theory of Fourier series gives existence of $C_n$ such that
+\begin{equation}
+g(x) = \sum_{n=1}^{\infty} C_n \sin(n \pi x)
+\end{equation}
+with convergence of the series being point wise. Linearity of the
+equation (principle of superposition) then gives the solution
+\begin{equation}
+u(x,t) = \sum_{n=1}^{\infty} u_n(x,t)
+\end{equation}
+where term by term differentiation is valid. Each ``mode'' has the
+form
+\begin{equation}
+u_n(x,t) = C_n e^{-\sbl a\pl n \pi \pr^2 + c \sbr t} \sin\sbl n \pi \pl x - bt\pr \sbr
+\end{equation}
+This solution shows that all modes are damped as long as $a\pl n \pi
+\pr^2 + c > 0$, and the higher the frequence, the stronger the
+damping.  Also, for $b=0$ the $a \pl n \pi \pr^2 + c$ are the
+eigenvalues of the linear differential operator $L$ where the
+continuous evolution equation is $u_t = -L u$. If $L_h \rightarrow L$
+for some discrete operator $L_h$ then we see that $L_h$ must have a
+condition number $\lambda_{h,max}/\lambda_ {h,min}$ that rapidly
+worsens (if convergence to $L$ is rapid). On the other hand if $b \neq
+0$ the damping is unchanged, but the solution also oscillates in time.
+A different analysis yields that the eigenvalues of $L$ in that case
+are complex, but still have a positive real part.
+
+\subsection{Steady-State Equation}
+
+Consider the nonlinear boundary value problem
+\begin{equation}
+(b u^p - a u^q_x)_x = 0 \quad u(0) = 1; u(1) = 0
+\end{equation}
+Changing variables to $w=u^q$, integrating once, and collecting terms in the constant yields
+\begin{equation}
+w_x = \frac{b}{a}(w^{p/q} + C)
+\end{equation}
+Taking $w(0)=1$ as the initial condition for this equation and noting
+that the right hand side is monotone for positive $w$, we see that for
+the other boundary condition to be met we need, if $b>0$, $C<-1$,
+which brackets $C$ on a half line (if $b<0$ we need $C > -1$. We'll
+take $b>0$.  Integrating once again over the interval (x,1) yields
+\begin{equation}
+\int \frac{1}{w^{p/q} + C} dw = \frac{b}{a}(1 - x)
+\end{equation}  
+We consider several special cases. For $p=q=1$ we obtain
+\begin{equation}
+u = \frac{e^{\frac{b}{a}} - e^{\frac{b}{a} x}}{e^{\frac{b}{a}} - 1}
+\end{equation}
+For $p=2,q=1$ (fast diffusion) we obtain
+\begin{eqnarray}
+u &=& \sqrt{-C} \mbox{tanh}\sbl \frac{b\sqrt{-C}}{a} \pl 1 - x \pr \sbr \\
+0 &=&  \sqrt{-C} \mbox{tanh}\sbl \frac{b\sqrt{-C}}{a}  \sbr - 1
+\end{eqnarray}
+For $p=1,q=2$ (fast diffusion) we obtain
+\begin{eqnarray}
+x &=& 1 - \frac{2a}{b}\sbl C \log \pl \frac{-C}{-u - C} \pr + u\sbr \\
+0 &=& 1 - \frac{2a}{b}\sbl C \log \pl \frac{-C}{-1 -C} \pr + 1\sbr
+\end{eqnarray}
+
+\subsection{ First-Order Approximation}
+
+First we consider solutions of the first-order approximation of
+\begin{equation}
+  \label{eq:bl}
+  m_t + f_x = 0
+\end{equation}
+on the spatial domain $(-\infty,\infty)$ given Riemann initial data,
+\begin{eqnarray}
+\label{eq:riemannData}
+u(x,0) = \left\{ \begin{array}{lr}
+u_- & \for x < 0 \\
+u_+ & \for x \geq 0
+\end{array} \right.
+\end{eqnarray}
+\Eqn{bl} is usually referred to as the Buckley-Leverett equation when
+$u=s$ and $f$ and $m$ are taken from the saturation equation of the
+two-phase fractional flow formulation. This equation generally only
+has weak solutions, which may be discontinuous and which furthermore
+are not unique (c.f. \citep{Evans_98,Leveque_90}). When the solution
+fails to be continuous, a discontinuity with left state $u_-$ and
+right state $u_+$ must propagate with speed
+\begin{equation}
+  \label{eq:rhcondition}
+  c = \frac{f(u_+) - f(u_-)}{m(u_+) - m(u_-)}
+\end{equation}
+Unique weak solutions can be specified by requiring that discontinuous
+solutions be in some sense a limit of solutions of \eqn{bl} with a
+second-order regularization term $\epsilon u_{xx}$ (a vanishing
+viscosity solution).  For non-convex $f$, this requirement can be
+stated as the Oleinik entropy condition \citep{Oleinik_57} (c.f.
+\citep{Osher_84,Leveque_90})
+\begin{equation}
+  \label{eq:oleinik}
+  \frac{f(u) - f(u_-)}{m(u) - m(u_-)} \geq c \geq  \frac{f(u) - f(u_+)}{m(u) - m(u_+)}
+\end{equation}
+for all $u$ between $u_-$ and $u_+$. For a general Riemann problem
+with $m(u_-) < m(u_+)$, the unique solution can be determined from the
+convex hull of the set
+\begin{equation}
+  \label{eq:chull}
+  \cbl (m,y) | m(u_-) \leq m(u) \leq m(m_+) \mbox{ and } y \geq f(u) \cbr
+\end{equation}
+The convex hull will consist of the graph of $f(m)$ and some set of
+chords enclosing regions where $f(m)$ is concave down. A chord on the
+boundary of the convex hull represents two values of the solution
+connected by a shock wave, and the slope of the chord is the shock
+speed $c$. This solution can be computed automatically by solving the
+minumization problem \citep{Osher_84}
+\begin{equation}
+  \label{eq:osherSol}
+  u(\xi) = \argmin_{u \in [u_-,u_+]} \sbl f(u) - \xi m(u) \sbr 
+\end{equation}
+where $\xi = x/t$. This formula is a concise statement of the entropy
+satisfying weak solution to the Riemann problem when $m_+ \geq m_-$ (a
+similar formula holds for $m_+ \leq m_-$). This problem can be solved
+in MATLAB using the \texttt{fminbnd} routine.
+
+\subsection{Traveling Wave Solutions}
+
+The solutions in the previous section are the unique entropy
+satisfying weak solutions composed of continuous rarefaction waves and
+discontinuous shock waves. The former condition arises due to the
+conservation form of the equation while the latter can be derived, as
+mentioned above, by requiring that any moving discontinuity correspond
+to traveling wave solutions of a second-order regularization of the
+equation. Now we look at traveling wave, which are the viscous analogs
+of shock waves.
+
+To derive traveling wave solutions, we assume that the solution has
+the form $u(x,t) = u(x - ct) = u(\xi)$ where $c$ is the wave speed (to
+be determined).
+\begin{equation}
+  \label{eq:travOdePrim1}
+  -c m_\xi + f_\xi - \phi_{\xi \xi} = 0
+\end{equation}
+Integrating once with respect to $\xi$ and rearranging yields
+\begin{equation}
+  \label{eq:travOdePrim2}
+  \phi_\xi  = -c m(\xi) + f(\xi) + B
+\end{equation}
+where $B$ is the constant of integration. We will enforce the
+following asymptotic boundary conditions on \eqn{travOdePrim2}
+\begin{eqnarray}
+  \lim_{\xi \rightarrow \pm \infty} u &=& u_{\pm} \label{eq:travOdeData1}\\
+  \lim_{\xi \rightarrow \pm \infty} \phi_\xi &=& 0  \label{eq:travOdeData2}
+\end{eqnarray}
+and write $f_{\pm}$ for $f(u_{\pm})$ and $m_{\pm}$ for $m(u_{\pm})$.
+These boundary conditions require
+\begin{equation}
+  \label{eq:travLim}
+  \lim_{u \rightarrow u_{\pm}} -c m + f + B = 0
+\end{equation}
+which implies
+\begin{equation}
+  \label{eq:travConst}
+  B = c m_- - f_- = c m_+ - f_+
+\end{equation}
+From \eqn{travConst} we can also determine $c$
+\begin{equation}
+  \label{eq:travSpeed}
+  c = \frac{f_+ - f_-}{m_+ - m_-}
+\end{equation}
+Note that \eqn{travSpeed} is the Rankine-Hugoniot condition.  We will
+take $B=c m_+ - f_+$. The traveling wave equation is then
+\begin{eqnarray}
+\label{eq:travOde}
+\phi(v)_\xi  &=& f(v) - \cbl \frac{f_+ - f_-}{m_+ - m_-} \sbl m(v) - m_+ \sbr + f_+\cbr \\
+&=& h(v_-,v_+,v)
+\end{eqnarray}
+\Eqn{travOde}, with boundary conditions given by
+\eqnst{travOdeData1}{travOdeData2}, may not have a solution, and, if
+it does, solutions are not unique (if $u(\xi)$ is a solution, then
+$u(C (\xi - \xi_0))$ is also a solution).  For two-phase flow and
+Richards' equation and the variable transforms we have defined,
+$\phi(u)$ is a monotone decreasing function of $u$.  Since we consider
+the case $u_+ = 0$ and $0 < u_- <1$, this implies that $\phi(u_-) <
+\phi(u_+)$.  The asymptotic boundary conditions can only be met if $h
+> 0$ for $u_+ \leq u \leq u_-$.  The term in braces on the right-hand
+side of \eqn{travOde} is an expression for the chord connecting $f_+$
+and $f_-$. The requirement that $h>0$ can then be interpreted as a
+constraint that the chord connecting $f_+$ and $f_-$ lie below the
+graph of $f(m)$.  Rearranging the requirement that $h>0$ yields half
+the Oleinik entropy inequality above. The other half comes from using
+the second definition of the constant $B$ above.  Thus, the analysis
+of the first-order case carries over to the full model in the
+following way: traveling wave solutions exist whenever the solution of
+the Riemann problem consists of a single shock wave. Dividing
+\eqn{travOde} by its (positive) right hand side and integrating once
+yields
+\begin{equation}
+  \label{eq:front}
+  G(u) = \int^{u}_{u_0} \frac{\od{\phi}{u}}{f(u) - \sbl c(m(u) - m_+) - f_+\sbr} d u = \xi 
+\end{equation}
+where $u_0 = u(0)$ can be chosen arbitrarily in $(u_+,u_-)$. Thus, if
+the integral in \eqn{front} is bounded as $u \rightarrow u_+$,
+$u(\xi)$ goes to $u_+$ in ``finite $\xi$'' and the ``front''
+$\zeta(t)$ is given by $tG(u_+)$.
+
+Consider first the simplified model problem with $u_-=1$, $u_+=0$.
+The integral above is
+\begin{equation}
+  \label{eq:simpModFront}
+  \xi = \int^u_{u_0} \frac{q a u^{q-1}}{bu^p - c u} du
+\end{equation}
+If $b=1$, $p=2$ and $q=1$, the simplified model is viscous Burgers'
+equation, and we have
+\begin{equation}
+  \label{eq:burgers}
+  \xi(u) = \log(1-u) - log(u)
+\end{equation}
+Since $\xi(u)$ is unbounded as $u \rightarrow u_{\pm}$, we see that
+there is no front ($\zeta(t)=\infty$). On the other hand, for $p=2$,
+we have
+\begin{equation}
+  \label{eq:degenerateBurgers}
+  \xi(u) = 2 \log(1-u)
+\end{equation}
+and therefore $\zeta(t) = 2t$. Note also that $\od{\xi}{u} = -2/(1-u)$
+and therefore $-1/2 \leq \od{u}{\xi} \leq 0$: solutions are Lipschitz
+continuous. For $p=3$ we have
+\begin{equation}
+  \label{eq:degenerateBurgers2}
+  \xi(u) = 3(u + \log(1-u))
+\end{equation}
+so that $\zeta(t) = 3t$. However $\od{\xi}{u} = 3[1 - 1/(1-u)]$ and
+therefore $\od{u}{\xi} \rightarrow -\infty$ as $x \rightarrow
+\zeta(t)$: solutions fail to be Lipschitz continuous in space or time
+at $\zeta(t)$.
+
+\subsection{Barenblatt's Solution}
+
+The traveling wave solutions don't exist in all of the situations
+we're interested. We look at another set of solutions under the
+assumption that advection is linear:
+\begin{equation}
+  \label{eq:porousMedia}
+  u_t + (b u - au^p_x)_x = 0
+\end{equation}
+By changing variables to $\xi = x - bt$ and and seeking a solution of
+the form $u(\xi,t) = t^{-\alpha} v(\xi t^{-\beta})$ it can be shown
+that a solution on $(-\infty,\infty)$ is given by (c.f.
+\citep{Evans_98})
+\begin{equation}
+\label{eq:barenblatt}
+u(x,t) = \frac{1}{t^{\frac{1}{p+1}}}\sbl B - \frac{p-1}{2a p(p+1)} \pl \frac{x-bt}{t^{\frac{1}{p+1}}} \pr^2 \sbr^{\frac{1}{p-1}} \quad |x - bt| < \zeta(t)
+\end{equation}
+for $p \neq 1$, where $B$ is determined from the particular initial
+conditions $u(x,0) = M \delta(x)$. For $p > 1$ the front location is
+finite and given by
+\begin{equation}
+\label{eq:barenblattFront}
+\zeta(t) = bt + \pl \frac{2ap(p+1)}{p-1} B \pr^{1/2} t^{\frac{1}{p+1}}
+\end{equation}
+For $p < 1$ there is no front. 
+
+Taking a different perspective, if we follow a point moving with speed
+b ($x - bt = x_0$) we see that it is driven toward equilibrium ($u =
+0$) fastest for small $p$.
+\section{Finite Element Formulations}
+
+I'm going to try to write a fairly general discontinuous formulation
+following \cite{Brezzi_etal_05}.  I'll start with a non-mixed
+formulation. The classical (strong) statement of the problem is
+\begin{eqnarray}
+m_t + \deld \pl \vec f - \ten a \grad \phi \pr + r &=& 0 \quad \vec x \in \Omega\\
+\phi &=& g \quad \vec x \in \Gamma_D \subset \partial \Omega \\ 
+\pl \vec f - \ten a \grad \phi \pr \cdot \vec n &=& h \quad \vec x \in \Gamma_N \subset \partial \Omega
+\end{eqnarray}
+where $u$ is the unknown and everything else is possibly a nonlinear
+function of $u$.  We assume that $\cbl \Omega_e \cbr$ is a partition
+of the domain $\Omega$ into subdomains (elements) and $\cbl \Gamma_f
+\cbr$ is the set of subdomain boundaries (faces) shared by two
+distinct elements. We also set $I$ to be the set of indeces of
+interior faces, $D$ the indeces for faces where Dirichlet conditions
+hold on all nodes of the face and $N$ the indeces of faces where
+Neumann conditions hold. We define $e_0(f),e_1(f)$ as the elements that
+share thy internal face $f$ and $\vec n_{e_0(f)}$ as the outward normal
+on $\partial \Omega_e$ along $\Gamma_f$. Likewise let $e(f), \vec
+n_{e(f)}$ be the element and outward normal associated with faces on
+the physical boundary. The solution and test space consists of
+functions that are possibly discontinuous at the interior faces so we well reformulate the continuous problems for the partition $\cbl \Omega_e \cbr$. We define the following fairly standard notation for jumps and averages
+\begin{eqnarray}
+\dbl \phi \dbr &=& \cbl \begin{array}{ll} 
+\phi_{e_0} \vec n_{e_0(f)} + \phi_{e_1(f)} \vec n_{e_1(f)} & f \in I \\
+\phi_{e} \vec n_{e(f)} - g \vec n_{e(f)} & f \in D \\
+\phi_{e} \vec n_{e(f)} & f \in N \end{array} \right. \\
+\dbl \gvec \sigma \dbr &=& \cbl \begin{array}{ll} \gvec \sigma_{e_0(f)} \cdot \vec n_{e_0(f)} + \gvec \sigma_{e_1(f)} \cdot \vec n_{e_1(f)} & f \in I \\
+\gvec \sigma_{e(f)} \cdot \vec n_{e(f)} - h & f \in N \\
+\gvec \sigma_{e(f)} \cdot \vec n_{e(f)} & f \in D \end{array} \right. \\
+\cbl \phi \cbr &=& \cbl \begin{array}{ll} 
+\frac{\phi_{e_0(f)}  + \phi_{e_1(f)}}{2} & f \in I \\
+\frac{\phi_{e(f)} + \phi(g)}{2} & f \in D \\
+\phi_{e(f)} & f \in N \end{array} \right. \\
+\cbl \gvec \sigma \cbr &=& \cbl \begin{array}{ll} 
+\frac{\gvec \sigma_{e_0(f)} + \gvec \sigma_{e_1(f)}}{2} & f \in I \\
+\frac{\gvec \sigma_{e(f)} + h \vec n_{e(f)}}{2} & f \in N \\
+\gvec \sigma_{e(f)} & f \in D \end{array} \right. 
+\end{eqnarray}
+The continuous problem with reference to the partition is then formulated as
+\begin{eqnarray}
+m_t + r + \deld \pl \vec f - \ten a \grad \phi \pr &=& 0 \mbox{ on } \Omega_e \quad \forall e \\
+\dbl \phi \dbr &=& 0 \mbox{ on } \Gamma_f \quad \forall f \in I \cup D \\
+\dbl \vec f - \ten a \grad \phi \dbr  &=& 0 \mbox{ on } \Gamma_f \quad \forall f \in I \cup N
+\end{eqnarray}
+Let $\gvec \sigma =\vec f - \ten a \grad \phi $ and $\mathcal{R} = m_t
++ \deld \gvec \sigma + r$. We then define the following forms
+\begin{eqnarray}
+a_e(\mathcal{R},B_0 w;u) &=& \sum_e \int_{\Omega_e} \mathcal{R} B_0 w dV \\
+a_{\phi}(\dbl \phi \dbr,\vec B_1 w;u) &=& \sum_{f\in D \cup I} \int_{\Gamma_f} \dbl \phi \dbr \cdot \vec B_1 w dS\\
+a_{\sigma}(\dbl \gvec \sigma \dbr,B_2 w;u)  &=& \sum_{f \in N \cup I} \int_{\Gamma_f} \dbl \gvec \sigma \dbr B_2 w dS
+\end{eqnarray}
+where the third argument of the form is a reminder that they are nonlinear functions of $u$.
+The weak formulation is then
+\begin{equation}
+a_e(\phi,B_0 w) + a_{\phi}(\dbl \phi \dbr, \vec B_1 w) + a_{\sigma}(\dbl \gvec \sigma \dbr, B_2 w) = 0 
+\end{equation}
+First I will define $B_0 w = w + \hat{B_0} w$ and put off thinking
+about the definition of $\hat{B_0}$--this is where the residual based
+stabilization term enters the formulation so there are many
+alternatives. First I want to identify the portion of the weak
+formulation that is calculated in the classical Galerkin method for
+continous trial and test spaces. We can calculate $a_e(\mathcal{R},w)$ using
+integration by parts to obtain
+\begin{eqnarray}
+a_e(\mathcal{R},w;u) &=& \sum_e \int_{\Omega_e} \sbl \pl m_t + r\pr w - \pl \vec f - \ten a \grad \phi \pr  \cdot \grad w \sbr dV + \sum_f \int_{\Gamma_f} \dbl \sigma w \dbr dS + \sum_{f \in N} \int_{\Gamma_f} hw dS  \\
+&=& a_{CG}(\phi,w;u) + \sum_{f} \int_{\Gamma_f} \dbl \sigma \dbr \cbl w \cbr dS + \sum_{f} \int_{\Gamma_f} \cbl \sigma \cbr \cdot \dbl w \dbr dS +  \sum_{f \in N} \int_{\Gamma_f} hw dS  
+\end{eqnarray} 
+The Neumann conditions enters through the special defintions of $\dbl
+\gvec \sigma \dbr$ on  $\Gamma_N$. Likewise, the second line follows from
+the other definitions of jumps and averages and we define the form $a_{CG}(\phi,w;u)$. Now if we choose $B_2 w =
+- \cbl w \cbr$, then $a_{\sigma}$ cancels with the second term in the
+last line, except on $\Gamma_D$ so we obtain
+\begin{equation}
+  a_{CG}(\phi,w) + \sum_{f \in D } \int_{\Gamma_f} \dbl \sigma \dbr \cbl w \cbr dS + \sum_{f \in D \cup I} \int_{\Gamma_f} \cbl \sigma \cbr \cdot \dbl w \dbr dS + \sum_{f \in N} \int_{\Gamma_f} hw dS + a_{\phi}(\dbl \phi \dbr, \vec B_1 w) = 0 
+\end{equation}
+Now if the continuous functions are subspaces of the trial and test
+space, we can approximate the solution by solving over this subspace.
+But in this case the usual CG formulation results becuase
+$a_{\phi} = 0$, $\dbl w \dbr = 0$, and $\cbl w \cbr|_{\Gamma^D} = 0$:
+\begin{equation}
+a_{CG}(\phi,w;u) + (h,w)_{\Gamma_N}
+\end{equation}
+or since the $\hat{B}_0$ term was not involved in any of the
+calculations above we could have
+\begin{equation}
+  a_{CG}(\phi,w;u) + (h,w)_{\Gamma_N}  + a_e(\mathcal{R}, \hat{B}_0 w;u) = 0 
+\end{equation}
+A well-known problem with the CG formulation is that locally
+conservative fluxes are not defined.  With the solution $\phi_{CG}$ in
+hand, we therefore return to the original DG formulation under the
+particular choice of $B_2$ (dropping the explicit nonlinearity in
+$u$):
+\begin{equation}
+a_{CG}(\phi,w) + \sum_{f \in D } \int_{\Gamma_f} \dbl \sigma \dbr \cbl w \cbr dS + \sum_{f \in D \cup I} \int_{\Gamma_f} \cbl \sigma \cbr \cdot \dbl w \dbr dS + \sum_{f \in N} \int_{\Gamma_f} hw dS+ a_{\phi}(\dbl \phi \dbr, \vec B_1 w) = 0 
+\end{equation}
+A basis for the discontinuous functions can be generated by
+multiplying the element basis functions by the element characteristic function $\xi_e$. We write the new basis as $\cbl
+w_{e,i} = \xi_{e} \psi_{e,i} \cbr $. Now we solve the equation
+above by {\em lagging} the CG terms and $\gvec \sigma $.
+\begin{equation}
+a_{CG}(\phi_{CG},w_{e,i}) + \sum_{f \in D } \int_{\Gamma_f} \dbl \sigma_{CG} \dbr \cbl w_{e,i} \cbr dS + \sum_{f \in D \cup I} \int_{\Gamma_f} \cbl \sigma_{CG} \cbr \cdot \dbl w_{e,i} \dbr dS + \sum_{f \in N} \int_{\Gamma_f} hw_{e,i} dS+ a_{\phi}(\dbl \phi_{DG} \dbr, \vec B_1 w_{e,i}) = 0 \label{conFlux}
+\end{equation}
+The only unknown term is then $\phi_{DG}$. Conveniently, all the other
+terms can be computed by multiplying the CG residuals by $\xi_e$,
+which are simply the element residuals that could have been saved from
+the CG assembly process.  We can obtain a local method for
+approximating $\phi_{DG}$ as follows. Fix global node $i$ and let
+$\Omega_i = supp(\psi_i) \cap \cbl \Omega_e \cbr$. Then $\cbl \Omega_i
+\cbr$ forms an overlapping decomposition of $\Omega$. Let
+$\phi_{DG,i}$ be the solution of \ref{conFlux} over $\Omega_i$ with
+boundary conditions $\phi_{DG,i} = 0$ on $\partial \Omega_i$. Now, if
+we fix $\xi_e$ and sum these local equations over all $i$ we obtain
+\begin{eqnarray}
+\int_{\Omega_e} (m_t + r) dV &+& \sum_{f \in F(e) \cap D} \int_{\Gamma_f} \dbl \sigma_{CG} \dbr \cbl w_{e,i} \cbr dS + \sum_{f \in F(e) \cap (D \cup I)} \int_{\Gamma_f} \cbl \sigma_{CG} \cbr \cdot \vec n_e dS \\&+& \sum_{f \in F(e) \cap N} \int_{\Gamma_f} h dS+ \sum_{f \in F(e) \cap (D \cup I)} \int_{\Gamma_f} h_{DG} = 0
+\end{eqnarray}
+where 
+\begin{equation}
+h_{DG} = \sum_{i} \dbl \phi_{i} \dbr \cdot \vec B_1
+\end{equation}
+Summing over all $\Omega_e$ then yeilds
+\begin{equation}
+\int_{\Omega} (m_t + r) dV + \sum_{f \in D} \int_{\Gamma_f} \cbl \sigma_{CG} \cbr \cdot \vec n_e dS + \sum_{f \in N} \int_{\Gamma_f} h dS+ \sum_{f \in D} \int_{\Gamma_f} h_{DG} = 0
+\end{equation}
+Thus, the flux 
+\begin{equation}
+h_f = \cbl \sigma_{CG} \cbr + \sum_{i} \dbl \phi_{DG} \dbr|_{f} \cdot \vec B_1
+\end{equation}
+is the sought after locally and globally conservative flux for the
+$CG$ solution. I'm not sure how to choose $\vec B_1 w$, but presumably
+the literature on DG will provide guidance. I think $\vec B_1 w =
+\frac{-1}{|\Gamma_f|} \dbl w \dbr$ may be good enough. It would be
+interesting to then iterate over the entire process solving again
+solving over a CG test space for the CG component $\phi_{CG}$.  In
+this we we might achieve convergence to a DG solution while every
+iterate would be ``locally and globally mass conservative''.
+
+Now I'll return to the issue of stabilizing the $CG$ solution, or in
+the notation above, the definition of $B_0$. I'll use the variational
+multiscale framework for this purpose. We write the true solution to
+the problem as $u = u_h + \hat{u} \in V$ where $u_h \in V_h$, $\hat{u}
+\in \hat{V}$, and $V_h$ and $\hat{V}$ are linearly independent
+subspaces of $V$. We similarly split the test space into linearly
+independent subspaces $W_h$ and $\hat{W}$. This yields a coupled
+system for $u_h,\hat{u}$
+\begin{eqnarray}
+ a_{CG}(\phi,w_h;u_h+\hat{u}) + (h,w_h)_{\Gamma_N}  + a_e(\mathcal{R}, \hat{B}_0 w_h;u_h+\hat{u}) &=& F_h \\ 
+ a_{CG}(\phi,\hat{w};u_h+\hat{u}) + (h,\hat{w})_{\Gamma_N}  + a_e(\mathcal{R}, \hat{B}_0 \hat{w};u_h+\hat{u}) + &=& \hat{F} \\ 
+\end{eqnarray} 
+This is a nonlinear system of equations. If we write Newton's method for this system and split the corrections as $\delta u_h,\delta \hat{u}$ we obtain the linear 
+\begin{eqnarray}
+\int_{\Omega} \sbl \pl \od{m_t}{u} + \od{r}{u} \pr \delta u_h w_h - \pl \od{\vec f}{u} \delta u_h - \ten{a} \od{\phi}{u} \grad \delta u_h \pr \cdot \grad w_h \sbr dV + \\
+\int_{\Omega} \delta \hat{u} \sbl \od{m_t}{u} w_h  + \od{r}{u} w_h - \od{\vec f}{u} \grad w_h + \deld \ten{a}^t \od{\phi}{u} \grad w_h \sbr dV + \mbox{BI's} = -F_h
+\end{eqnarray}
+and
+\begin{eqnarray}
+\int_{\Omega} \sbl \pl \od{m_t}{u} + \od{r}{u} \pr \delta \hat{u} \hat{w} - \pl \od{\vec f}{u} \delta \hat{u} - \ten{a} \od{\phi}{u} \grad \delta \hat{u} \pr \cdot \grad \hat{w} \sbr dV = \\
+-\hat{F} - \sum_e \int \sbl \pl \od{m_t}{u} + \od{r}{u} \pr \delta u_h + \deld \pl \od{\vec f}{u} \delta u_h - \ten{a} \od{\phi}{u} \grad \delta u_h \pr \sbr \hat{w} dV + \mbox{BI's}
+\end{eqnarray}
+which we can write more compactly as 
+\begin{eqnarray}
+a(\delta u_h, w_h) + \sum_{e} (\delta \hat{u},\mathcal{L}^* w_h)_{\Omega_e} + \mbox{BI's} &=& - F_h \\
+a(\delta \hat{u},\hat{w}) &=& - \hat{F} - \sum_e (\mathcal{L} \delta u_h - f,\hat{w}) + \mbox{BI's}
+\end{eqnarray}
+We now approximately solve for $\delta \hat{u}$ in terms of $\delta u_h$ and then solve the resulting equation for $\delta u_h$.
+Taking continuous spaces for $u_h$ and $w_h$ and choosing $B_2$ as above yields
+\begin{eqnarray}
+a_e(\mathcal{R},B_0 w_h) + a_{\phi}(\dbl \phi \dbr, \vec B_1 w_h) + a_{\sigma}(\dbl \gvec \sigma \dbr, B_2 w_h) &=& 0 \\
+a_e(\mathcal{R},B_0 \hat{w}) + a_{\phi}(\dbl \phi \dbr, \vec B_1 \hat{w}) + a_{\sigma}(\dbl \gvec \sigma \dbr, B_2 \hat{w}) &=& 0 
+\end{eqnarray} 
+
+We begin with the general ADR system
+\begin{equation}
+  \label{eq:nladrsysImp}
+  \pd{m^i}{t} + \deld \sbl \vec f^i - \sum_{j=1}^{n_c} \ten{a}^{ij} \grad \phi^j \sbr + r^i = 0 \mbox{ in } (0,T] \times U \mbox{ for } i=1,\ldots, n_c
+\end{equation}
+which we write as an abstract evolution equation on some space $X$:
+\begin{equation}
+  \label{eq:abstractEvolve}
+  \od{m^i}{t} = F^i \mbox{ for } i=1,\ldots, n_c
+\end{equation}
+where $m^i$ and $F^i$ are possibly nonlinear differential operators on
+the solution $(u^1,\ldots,u^{n_c})$. This ``Rothe's'' Method for
+solving time-dependent partial differential equations (a.k.a
+discretizing in time first).  We consider linear multistep,
+Runge-Kutta, and Rosenbrock methods for the discretization of this
+problem.  Multistep methods take the form
+\begin{equation}
+  \label{eq:multistep}
+  \sum_{j=1}^{n_s} a_j m(u_{n-j}) = \sum_{j=1}^{n_s} b_j F_{n-j}(t_{n-j},u_{n-j})
+\end{equation}
+where we have dropped the component superscript $i$ and interpret the
+\eqn{multistep} as a system. Note that if $b_0 = 0$ then the method is
+semi-explit for our problem. It would still remain to solve for $u$
+based on the relation between $u$ and $m$, which is usually easy or
+even completely trivial. To put the resulting equation into focus we write it in the simpler form
+\begin{equation}
+  \label{eq:multistepReduced}
+  a_0 m_n - b_n F_n - \beta = 0
+\end{equation}
+The Runge-Kutta methods generally take the form
+\begin{eqnarray}
+  \label{eq:rungeKutta}
+  m(u_{n+1}) &=& m_n + h \sum_{j=1}^{n_s} b_j F(t_n + c_j h,u_{nj}) \\
+  m(u_{nk})  &=& m_n + h \sum_{j=1}^{n_s} a_{kj} F(t_n + c_j h,u_{nj}) 
+\end{eqnarray}
+Note that these equations represent an implicit system for
+$u_{n+1},u_{n1},\ldots, u_{ns}$. If $a_{kj} = 0$ for $k>j$ then we can
+solve this system sequentially so that that the solution can be
+obtained in $n_s$ steps where a system of the same size as the
+original PDE is solved at each stage. These are called diagonally
+implicit methods (DIRK). Furtheremore if additionally $a_{kk} = 0$
+then $m(u_{nk})$ is determined explicitly and only $m(u)$ need be
+inverted to obtain $u_{nk}$. Such a method would correspond to explit
+RK methods if $m=u$. Typically the implicit system in DIRKs is solved
+using Newton's method. The idea behind Rosenbrock methods is to
+approximate the intermediate stages using one Newton step. These
+yields methods that are linearly implicit: for our problems the
+require the solution of a linear PDE at each step rather than a
+nonlinear PDE. If we write the RK method for a diagonally implicit
+method as
+\begin{eqnarray}
+  \label{eq:rungeKutta}
+  m(u_{n+1}) &=& m_n + h \sum_{j=1}^{n_s} b_j F(t_n + c_j h,u_{nj}) \\
+  m(u_{nk})  &=& m_n + h \sum_{j=1}^{k} a_{kj} F(t_n + c_j h,u_{nj}) 
+\end{eqnarray}
+then the newton step for each stage takes the form
+
+\bibliographystyle{plainnat} \bibliography{aw}
+\end{document}

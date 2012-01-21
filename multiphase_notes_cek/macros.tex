@@ -1,0 +1,61 @@
+%differential operators
+\newcommand{\grad}{\nabla}
+\newcommand{\deld}{\nabla \cdot}
+\newcommand{\lap}{\Delta}
+%boldface in math mode
+\newcommand{\bm}[1]{\mbox{{\boldmath ${#1}$}}}
+% vectors and tensors
+\renewcommand{\vec}[1]{{\bf #1}}
+\newcommand{\gvec}[1]{\mbox{{\boldmath ${#1}$}}}
+\newcommand{\ten}[1]{\bar{\bm{#1}}}
+%derivatives
+\newcommand{\od}[2]{\frac{d {#1}}{d {#2}}}
+\newcommand{\ods}[2]{\frac{d^2{#1}}{d {{#2}^2}}}
+\newcommand{\pd}[2]{\frac{\partial {#1}}{\partial {#2}}}
+\newcommand{\pds}[2]{\frac{\partial^2{#1}}{\partial {{#2}^2}}}
+\newcommand{\pdsm}[3]{\frac{\partial^2{#1}}{\partial {#2}\,\partial {#3}}}
+%funtional analysis
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\norm}[1]{\left\| #1 \right\|}
+\newcommand{\iprod}[2]{\left( #1, #2 \right)}
+\newcommand{\dprod}[2]{\left\langle #1, #2 \right\rangle}
+%real numbers
+\newcommand{\field}[1]{\mathbb{#1}}
+\newcommand{\R}{\field{R}}
+%funciton spaces
+\newcommand{\M}{\mathcal{M}}
+%delimiters
+\newcommand{\pl}{\left(}
+\newcommand{\pr}{\right)}
+\newcommand{\sbl}{\left[}
+\newcommand{\sbr}{\right]}
+\newcommand{\dbl}{\left[\hspace{-0.05cm}\left[}
+\newcommand{\dbr}{\right]\hspace{-0.05cm}\right]}
+\newcommand{\cbl}{\left\{ }
+\newcommand{\cbr}{\right\} }
+\newcommand{\eqn}[1]{equation \ref {eq:#1}} 
+\newcommand{\Eqn}[1]{Equation \ref {eq:#1}} 
+\newcommand{\eqnst}[2]{equations \ref{eq:#1} and \ref{eq:#2}} 
+\newcommand{\Eqnst}[2]{Equations \ref{eq:#1} and \ref{eq:#2}} 
+\newcommand{\eqns}[2]{equations \ref{eq:#1}--\ref{eq:#2}} 
+\newcommand{\Eqns}[2]{Equations \ref{eq:#1}--\ref{eq:#2}}
+\newcommand{\msection}[1]{ \vspace{.2in} {\noindent \bf #1}.}
+\renewcommand{\for}{\mbox{for}\quad}
+%\newcommand{\for}{\mbox{for}\quad}
+\newcommand{\argmin}{\mbox{argmin}}
+\newcommand{\argmax}{\mbox{argmax}}
+\newcommand{\fig}[1]{figure \ref{fig:#1}} 
+\newcommand{\Fig}[1]{Figure \ref{fig:#1}} 
+\newcommand{\figst}[2]{figures \ref {fig:#1} and \ref {fig:#2}} 
+\newcommand{\Figst}[2]{Figures \ref {fig:#1} and \ref {fig:#2}} 
+\newcommand{\figs}[2]{figures \ref{fig:#1}--\ref{fig:#2}} 
+\newcommand{\Figs}[2]{Figures \ref{fig:#1}--\ref{fig:#2}}
+\newcommand{\tab}[1]{table \ref {tab:#1}} 
+\newcommand{\Tab}[1]{Table \ref {tab:#1}} 
+\newcommand{\tabst}[2]{tables \ref {tab:#1} and \ref {tab:#2}} 
+\newcommand{\Tabst}[2]{Tables \ref {tab:#1} and \ref {tab:#2}} 
+\newcommand{\tabs}[2]{tables \ref{tab:#1}--\ref{tab:#2}} 
+\newcommand{\Tabs}[2]{Tables \ref{tab:#1}--\ref{tab:#2}}
+\newtheorem{theorem}{Theorem}
+\newenvironment{neqnarray}[1]{\begin{minipage}[t]{6.5in}  \begin{minipage}[b]{1.0in} #1 \end{minipage}  \begin{minipage}[b]{5.5in}\begin{eqnarray}}{\end{eqnarray}\end{minipage}\end{minipage}}
+\newcommand{\bneqnarray}[2]{\\ \\ \fbox{\begin{neqnarray}{#1} #2 \end{neqnarray}}\\ \\ \noindent}

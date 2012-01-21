@@ -1,0 +1,74 @@
+\documentclass[12pt,dvips]{report}
+\setcounter{secnumdepth}{5}
+\usepackage{epsfig}
+%... include macros 
+\input{macros} 
+
+\begin{document}           % End of preamble and beginning of text.
+\begin{center} \bf Compressible Two-Phase Flow Formulation \end{center}
+
+For a homogeneous medium and compressible fluids, the equations
+for two-phase flow in fractional flow form are
+\begin{eqnarray}
+ \pd{(\omega \rho_w S_w)}{t}  &=& - \deld [ \frac{\rho_n k_{rn}}{\mu_n} f_w \pd{p_c}{S_w} \grad S_w \nonumber \\
+&&- \frac{\rho_n  k_{rn}}{\mu_n} f_w (\rho_n - \rho_w) \vec g 
+ + f_w \vec q_t ]  \label{mass_balance} \\
+\pd{ \{ \omega [ \rho_w S_w - \rho_n (1-S_w)] \} }{t} &=& -\deld  \vec q_t  \label{div_term} \\
+\vec q_t &=& - K \l[ \chi \grad p_t  - \rho_t  \vec g \r] \\ 
+K &=& \frac{\rho_w k_{rw}}{\mu_w}+ \frac{\rho_n k_{rn}}{\mu_w} \\
+f_w &=& \frac{\frac{\rho_w k_{rw}}{\mu_w}}{\frac{\rho_w k_{rw}}{\mu_w}+ \frac{\rho_n k_{rn}}{\mu_w}}\\
+p_t &=& \frac{p_n + p_w}{2} + \int_{1}^{S_w}  (\frac{1}{2} - f_w(s,p_t)) \pd{p_c}{S_w}(s) ds \\
+\chi & = & 1 - \pd{}{p_t} \int_{1}^{S_w}  (\frac{1}{2} - f_w(s)) \pd{p_c}{S_w}(s) ds \\
+\rho_t &=& ((1-f_w)\rho_n + f_w \rho_w) \\
+\rho_w &=& \hat{\rho_w}(p_t)/\hat{\rho_w}(p_{t0})\\
+\rho_n &=& \hat{\rho_n}(p_t)/\hat{\rho_n}(p_{t0})\\
+\end{eqnarray}
+The unknowns are $S_w$ and $p_t$. The first three equations are the
+PDE's. The rest are nonlinearities. The $p-s-k$ functions and
+densities still have to be specified. There are a couple of things to
+note. 1) $p_t$ appears in its own definition so it is defined
+implicitly. (Chavent and Jaffre prove the definition of $p_t$ is a
+contraction, therefore $p_t$ is unique) 2) A new term $\chi$ shows up
+in the pressure equation. This is because the ``Kirchof trick'' is
+complicated by the fractional flow $f_w$ now depending on $S_w$ and $p_t$.
+3) Given $p_t$ and $S_w$ you should be able to compute $p_w$ and $p_n$
+independently so it shouldn't be strictly necessary to evaluate the
+densities at $p_t$, but this is how Chavent and Jaffre do it so there
+may be a deeper reason for doing it this way. As with the
+incompressible version you should be able to plug all of the equations
+into eqn \ref{mass_balance} and \ref{div_term} and recover the
+equation for the wetting phase in the standard two-phase approach and
+the sum of the wetting and nonwetting phase equations.I've lumped the
+intrinsic permeability into $k$ since the medium is homogeneous but
+otherwise this model should be identical to Chavent and Jaffre's
+starting on pp199-202. With appropriate defintions in terms of the
+above we get (note I've changed the sign of D from the last set of
+notes just to make it consistent with standard advection diffusion
+equations).
+\begin{eqnarray}
+\pd{M_w}{t} + \deld \l[ -D_w(S_w,p_t) \grad S_w + F_w(S_w,p_t) \r] &=&0 \\
+\pd{M_t}{t} + \deld \l[ -D_t(S_w,p_t) \grad p_t+ F_t(S_w,p_t) \r] &=&0 \\
+M_w - \hat{M_w}(S_w,p_t) &=& 0 \\
+M_t - \hat{M_t}(S_w,p_t) &=& 0
+\end{eqnarray}
+If this were the incompressible case $p_t$ wouldn't show up in the
+coefficients of the first and third equations so you could use an
+explict method on those equations and an implicit method on the second
+and fourth equations without any splitting error (that's IMPES). In
+the compressible case we either have to do operator splitting or do
+the whole thing implicitly. If at least part of both equations are
+solved implicitly (say the diffusion part of the saturation equation
+coupled with the entire pressure equation) then we could still only
+invert diagonal and tridiagonal matrices if we're willing to back off
+of Newton's method some. 
+
+\end{document}
+
+
+
+
+
+
+
+
+

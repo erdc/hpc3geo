@@ -1,0 +1,189 @@
+\documentclass[12pt,dvips,letterpaper]{article}
+\usepackage{epsfig,amsmath,amsfonts}
+\begin{document}
+\input{macros} 
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\framedEquation}[1]{\fbox{$ \begin{array}{rcl} #1 \end{array} $}}
+\newcommand{\framedArray}[1]{\fbox{$ \begin{array}{rcl} #1 \end{array} $}}
+
+\begin{center}
+  Model Formulations for Flow and Transport in Porous Media
+\end{center}
+\begin{center} 
+  C. E. Kees \\
+  Center for Research in Scientific Computation \\
+  Department of Mathematics \\
+  North Carolina State University \\
+  Raleigh, NC 27695-8205 \\
+  (chris\_kees@ncsu.edu) \\
+\end{center}
+\begin{abstract}
+  I present brief model formulations for flow in porous media,
+  focusing on the general structure rather than physical details.
+  I put the main model equations in boxes and the solution is
+  always labeled $u$. Boundary conditions can be a mixture of
+  Dirichlet, Neumann, and Robin conditions and may depend on time.
+  Nonlinear source terms can be added to any of the models to
+  represent injection or extraction wells. To simplify the notation, I
+  will assume that none of the coefficients vary in space, but in most
+  cases the coefficients vary significantly.
+\end{abstract}
+\begin{center}
+  Updated: October 1, 2003 \\
+\end{center}
+
+\section{Single Phase Flow}
+
+The porous medium is saturated by a single fluid phase, usually water.
+
+\subsection{Incompressible Case}
+Assuming the fluid is incompressible, the model is
+\begin{equation}
+\framedEquation{ - \deld  \ten{a} \grad u  = 0 }
+\end{equation}
+where $\ten{a}$ is the symmetric positive definite {\em hydraulic conductivity} and
+\begin{equation*}
+u = \frac{p - p_0}{\rho_0 \| g\|} - \frac{\vec g \cdot \vec x}{\| g\|}
+\end{equation*}
+is the {\em total head} where $p$ is pressure, $p_0$ is a reference
+pressure, $\rho_0$ is the density of water at the reference pressure, and $\vec g$ is the
+gravitational acceleration.
+\subsection{Compressible Case}
+We write the density of water in the porous medium as $\rho \omega$
+where $\omega$ is the {\em porosity} or fraction of the porous media
+occupied by water. Density and porosity are parameterized as
+\begin{eqnarray*}
+\rho(\psi) &=& \rho_0 e^{c_0 \psi} \\
+\omega(\psi) &=& \omega_0 e^{c_R \psi} \\
+\end{eqnarray*}
+where $\omega_0$ is the porosity at $p_0$, $c_0$ and $c_R$ are
+fluid and media compressibilities, and 
+\begin{equation*}
+\psi = \frac{p - p_0}{\rho_0 \| g\|}
+\end{equation*}
+is the {\em pressure head}. The compressibility models are usually further simplified to their first order Taylor series expansions
+\begin{eqnarray*}
+\rho(\psi) &=& \rho_0 \( 1 + c_0 \psi \) \\
+\omega(\psi) &=& \omega_0 \( 1 + c_R \psi \) 
+\end{eqnarray*}
+The resulting model is
+\begin{equation}
+\framedEquation{
+\pd{[\omega(u) \rho(u)]}{t} + \deld \left[ - \ten{a} ( u) \grad u + \vec b(u) \right] = 0 }
+\end{equation}
+where
+\begin{equation*}
+\vec b(u) = \frac{\ten{a} ( u)  \rho(u) \vec g}{\rho_0 \| g\|} 
+\end{equation*}
+and $u=\psi$. Often the spatial gradients of density and the compressibility in $\omega$ are neglected so we recover the heat equation
+\begin{equation}
+\framedEquation{
+c \pd{u}{t} + \deld \left[ - \ten{a} \grad u \right] = 0 }
+\end{equation}
+where $u=\phi$.
+
+\section{Immiscible Twophase Flow}
+We will describe the flow of two phases (e.g. air and water) using the
+water {\em saturation}, which is the fraction of the ``pore space''
+containing water and a pressure that depends on the particular model
+formulation. We denote these variables $u_s$ and $u_p$.  We say a
+point in the medium is fully saturated when $u_s=1$ and dry when
+$u_s=0$.
+
+\subsection{Incompressible Case}
+
+\begin{equation}
+\framedArray{
+\pd{u_s}{t} + \deld \left[ - \ten{a}_w ( u_s) \grad u_p + \vec b_w(u_s) \right] &=& 0 \\
+-\pd{u_s}{t} + \deld \left[ - \ten{a}_n ( u_s) (\grad u_p + \ten{c}(u_s) \grad u_s) + \vec b_n(u_s) \right] &=& 0 }
+\end{equation}
+where $\ten{a}_w$ and $\ten{a}_n$ are the wetting and non-wetting
+hydraulic conductivities and $\ten{c}$ is an additional nonlinear closure
+relation. All of the nonlinearities in multiphase flow are continuous,
+but they can be non-Lipschitz at a single point corresponding to
+$u_s=1$ in some important cases. Furthermore $\ten{a}_n = 0$ at
+$u_s=1$ and $\ten{a}_w \rightarrow 0 $ as $u_s \rightarrow 0$.
+
+\subsubsection{Fractional Flow Form}
+
+Adding the above equations and making some reasonable assumptions
+about the form of the $\vec x$ and $u$ dependence of the coefficients
+we obtain a different formulation called the {\em fractional flow}
+formulation given by
+\begin{equation}
+\framedArray{
+\pd{u_s}{t} + \deld \left[ - \ten{a}(u_s) \grad u_s + b(u_s) \vec q_t \right] &=& 0  \label{buckley}\\
+\vec q_t + \ten{a}_t(u_s) ( \grad u_p - \vec b_t(u_s) )  &=& 0\\
+\deld \vec q_t &=& 0 }
+\end{equation}
+Again the nonlinearities are continuous but possibly non-Lipschitz.
+The pressure variable $u_p$ now corresponds to a special kind of
+average of the individual phase pressures that comes from the
+derivation of the fractional flow formulation.  Furthermore $\vec b(u_s)$
+(the fractional flow) is non-convex and non-monotone and $\ten{a}(u_s)
+= 0$ at $u_s=1$. In one-dimension $\vec q_t$ is constant in space so
+we need only solve the first equation of \ref{buckley}, which is known as the
+Buckley-Leverett equation.
+
+\subsection{Compressible Case} 
+Using the same density and porosity models as with the saturated case we get
+\begin{equation}
+\framedArray{
+\pd{[m_w(u_s,u_p)]}{t} + \deld \left[ - \ten{a}_w ( u_s,u_p) \grad u_p + \vec b_w(u_s,u_p) \right] &=& 0 \\
+\pd{[m_n(u_s,u_p)]}{t} + \deld \left[ - \ten{a}_n ( u_s,u_p) (\grad u_p + \ten c(u_s) \grad u_s) + \vec b_n(u_s,u_p) \right] &=& 0 }
+\end{equation}
+where we have simply used nonlinear bulk densities $m_w,m_n$ to simplify notation.
+\subsubsection{Fractional Flow Form}
+The fractional flow formulation becomes
+\begin{equation}
+\framedArray{
+\pd{[m_w(u_w,u_p)}{t} + \deld [  - \ten{a}(u_w,u_p) \grad u_s + \vec b(u_s,u_p) \vec q_t  ] &=& 0 \\
+\pd{m_t(u_w,u_p)}{t} - \deld  \vec q_t &=& 0 \\
+\vec q_t + \ten{a}_t(u_w,u_p)  (\grad u_p + \vec b_t(u_s,u_p) ] &=& 0\\ }
+\end{equation}
+
+\subsection{Richards Equation}
+
+A related model for flow of water in a variably saturated porous
+medium is called Richards equation
+\begin{equation}
+\framedEquation{
+\pd{[m_w(u_p)]}{t} + \deld \left[ - \ten{a}_w ( u_p) \grad u_p + \vec b_w(u_p) \right] = 0 }
+\end{equation}
+Richards derived his equation based on the physics of flow in
+capillary tubes, but it can be seen as a simplification of the full
+two-phase model. This model has continuous coefficients but $\ten{a}_w$ can be non-Lipschitz at $u_p=0$. Also $\ten{a}_w \rightarrow 0$ as $u_p \rightarrow - \infty$
+
+\subsection{Kirchof Transformation}
+
+We can rewrite terms like $a(u) \grad u$ as $\grad \phi$ where 
+\begin{equation*}
+\phi = \int_0^u a(v) dv
+\end{equation*}
+this trick is called the Kirchof transformation and $\phi(u)$
+the Kirchof potential. If $\phi(u)$ is invertible then we can use
+$\phi$ as the solution variable and there will be no nonlinearity in
+the second order term. For instance, Richards' equation becomes
+\begin{equation}
+\framedEquation{
+\pd{[m_w(\phi)]}{t} + \grad^2 \phi +  \deld \vec b_w(\phi)  = 0 
+}
+\end{equation}
+
+
+\section{Transport}
+We will assume that the chemical being transported in the
+fluid does not effect the bulk fluid phase flow.  Transport of a
+chemical in one of the phases is then
+\begin{equation}
+\framedEquation{
+\pd{m(u)}{t} + \deld [- \ten{a} \grad u + \vec{f} u ]  +  r(u) = 0
+}
+\end{equation}
+where $\ten{a}$ is the symmetric positive definite diffusion coefficient, $\vec{f}$ is the fluid
+velocity, $r$ is a reaction term and $m$ may represent reactions that
+occur fast enough with respect to the other terms that they can be
+considered to have reached equilibrium instantaneously. The reactions $m$ and $r$ can be non-Lipschitz. 
+\end{document}
+

@@ -1,0 +1,64 @@
+\documentclass[12pt,dvips,letterpaper]{article}
+\usepackage{epsfig,amsmath,amsfonts}
+\begin{document}
+\input{macros} 
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\framedEquation}[1]{\fbox{$ \begin{array}{rcl} #1 \end{array} $}}
+\newcommand{\framedArray}[1]{\fbox{$ \begin{array}{rcl} #1 \end{array} $}}
+
+\begin{center}
+ The Richards Equation Model of Air and Water Flow in Porous Media
+\end{center}
+\begin{center} 
+  C. E. Kees \\
+  Center for Research in Scientific Computation \\
+  Department of Mathematics \\
+  North Carolina State University \\
+  Raleigh, NC 27695-8205 \\
+  (chris\_kees@ncsu.edu) \\
+\end{center}
+\begin{abstract}
+  I present a brief model formulation for Richards' equation, a model
+  of water flow in variably saturated porous media and a simple 1D
+  test problem.\end{abstract}
+\begin{center}
+  Updated: October 1, 2003 \\
+\end{center}
+
+\section{Richards Equation}
+
+The model can be written concisely as
+\begin{equation}
+\framedEquation{
+\pd{[m(u)]}{t} + \deld \left[ - a( u) \grad u + \vec b(u) \right] = 0 }
+\end{equation}
+We still need to specify the nonlinearities. First consider an
+alternate formulation.
+
+\subsection{Kirchof Transformation}
+
+We can rewrite the term  $a(u) \grad u$ as $\grad \phi$ where 
+\begin{equation*}
+\phi = \int_0^u a(v) dv
+\end{equation*}
+this trick is called the Kirchof transformation and $\phi(u)$
+the Kirchof potential. If $\phi(u)$ is invertible then we can use
+$\phi$ as the solution variable and there will be no nonlinearity in
+the second order term. For instance, Richards' equation becomes
+\begin{equation}
+\framedEquation{
+\pd{[m(\phi)]}{t} + \grad^2 \phi +  \deld \vec b(\phi)  = 0 
+}
+\end{equation}
+
+\subsection{Nonlinearities}
+
+We use the following algebraic relations to close the equation.
+\begin{equation}
+\boxedArray{
+m(u) &=&  (1 + u^n)^(1/n - 1) \\
+a(u) &=& k_s (
+\end{equation}
+\end{document}
+
